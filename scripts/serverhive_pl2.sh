@@ -77,7 +77,7 @@ cat << 'EOF' > .repo/local_manifests/PL2.xml
   <project path="device/nokia/sdm660-common" name="nokia-msm8998/android_device_nokia_sdm660-common" revision="lineage-24.0" remote="github" />
 
   <!-- Kernel sources (Linux 4.19 unified tree) -->
-  <project path="kernel/nokia/sdm660" name="nokia-msm8998/android_kernel_nokia_sdm660_419" revision="lineage-23.2" remote="github" />
+  <project path="kernel/nokia/sdm660" name="Zoro-15/android_kernel_nokia_sdm660_419" revision="lineage-23.2" remote="github" />
 
   <!-- Proprietary vendor blobs -->
   <project path="vendor/nokia/PL2" name="nokia-msm8998/proprietary_vendor_nokia_PL2" revision="lineage-24.0" remote="github" />
