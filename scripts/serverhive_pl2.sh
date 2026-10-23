@@ -3,15 +3,17 @@ set -e
 
 # ==============================================================================
 # LineageOS 24.0 (Android 17) Build Script for Nokia 6.1 (PL2)
-# Optimized for ServerHive Bare-Metal Server
+# Optimized for ServerHive Bare-Metal Server & Crave Devspace
 # ==============================================================================
 
 echo "========================================================"
 echo "=== LineageOS 24.0 (Android 17) Build for Nokia 6.1 (PL2) ==="
 echo "========================================================"
 
-# Auto-manage build directory on ServerHive (separate from cancunf)
-if [ ! -d ".repo" ]; then
+# Auto-manage build directory (Preserve Crave Devspace workspace if present)
+if [ -d "/crave-devspaces" ] || [ -f "/opt/crave/resync.sh" ] || [ -f "/usr/bin/resync" ] || [ -n "${CRAVE_WORKDIR}" ]; then
+    echo "--> Detected Crave devspace environment. Working inside: $(pwd)"
+elif [ ! -d ".repo" ]; then
     BUILD_DIR="${HOME}/pl2_build"
     echo "--> Setting up build directory in ${BUILD_DIR}..."
     mkdir -p "${BUILD_DIR}"
@@ -20,20 +22,34 @@ else
     echo "--> Working inside current build repository: $(pwd)"
 fi
 
-# 1. Base Git & Ccache Environment
+# 1. Base Git & Memory / Ccache Environment
 git config --global user.name >/dev/null 2>&1 || git config --global user.name "Zoro-15"
 git config --global user.email >/dev/null 2>&1 || git config --global user.email "rajkavi4315@gmail.com"
+
+# Memory guards for Soong / Go on Crave Devspace & Cloud Nodes
+export GOMEMLIMIT=10GiB
+export GOGC=50
+export _JAVA_OPTIONS="-Xmx10g"
+export WITHOUT_CHECK_API=true
+export SKIP_ABI_CHECKS=true
 
 if ! command -v ccache &>/dev/null; then
     (sudo apt-get update -y && sudo apt-get install -y ccache) 2>/dev/null || \
     (apt-get update -y && apt-get install -y ccache) 2>/dev/null || true
 fi
 
+CCACHE_BIN=""
 if command -v ccache &>/dev/null; then
+    CCACHE_BIN="$(command -v ccache)"
+elif [ -x "prebuilts/misc/linux-x86/ccache/ccache" ]; then
+    CCACHE_BIN="$(pwd)/prebuilts/misc/linux-x86/ccache/ccache"
+fi
+
+if [ -n "$CCACHE_BIN" ]; then
     export USE_CCACHE=1
-    export CCACHE_EXEC=$(which ccache)
+    export CCACHE_EXEC="$CCACHE_BIN"
     export CCACHE_DIR="${HOME}/.ccache"
-    ccache -M 50G 2>/dev/null || true
+    "$CCACHE_BIN" -M 50G 2>/dev/null || true
 else
     export USE_CCACHE=0
     unset CCACHE_DIR
@@ -48,8 +64,9 @@ else
     echo "--> Repo already initialized. Skipping repo init."
 fi
 
-# 3. Local Manifest for Nokia 6.1 (PL2)
+# 3. Clean Stale Local Manifests & Configure Nokia 6.1 (PL2) Manifest
 echo "--> Configuring PL2 local manifest..."
+rm -rf .repo/local_manifests
 mkdir -p .repo/local_manifests
 
 cat << 'EOF' > .repo/local_manifests/PL2.xml
@@ -68,13 +85,15 @@ cat << 'EOF' > .repo/local_manifests/PL2.xml
 </manifest>
 EOF
 
-# 4. Source Sync
+# 4. Source Sync (Crave accelerated resync + force-sync with dirty protections)
 echo "--> Syncing source repositories..."
-if [ -f "/opt/crave/resync.sh" ]; then
+if [ -f /usr/bin/resync ]; then
+    /usr/bin/resync
+elif [ -f /opt/crave/resync.sh ]; then
     /opt/crave/resync.sh
-else
-    repo sync -c -j$(nproc --all) --force-sync --no-clone-bundle --no-tags --prune
 fi
+
+repo sync -c -j$(nproc --all) --force-sync --force-remove-dirty --no-clone-bundle --no-tags --prune
 
 # Pull Git LFS objects if needed
 echo "--> Pulling Git LFS dependencies..."
@@ -86,6 +105,9 @@ source build/envsetup.sh
 
 echo "--> Selecting target and starting compilation..."
 breakfast PL2 || lunch lineage_PL2-trunk_staging-userdebug || lunch lineage_PL2-userdebug || lunch lineage_PL2-ap4a-userdebug
+
+echo "--> Cleaning stale intermediates (make installclean)..."
+make installclean
 
 LOG_FILE="build_a17_PL2.log"
 echo "--> Compiling LineageOS 24.0 (logging to ${LOG_FILE})..."
